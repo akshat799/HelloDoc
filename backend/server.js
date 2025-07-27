@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const client = require('prom-client');
 const mongoSanitize = require('express-mongo-sanitize');
 const xssClean = require('xss-clean');
 const cookieParser = require('cookie-parser');
@@ -36,6 +37,23 @@ app.use((req, res, next) => {
 app.use(mongoSanitize());
 
 app.use(xssClean());
+
+client.collectDefaultMetrics();
+
+const httpRequestDurationMicroseconds = new client.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route', 'code'],
+  buckets: [0.1, 0.3, 0.5, 1, 1.5, 2, 5]
+});
+
+app.use((req, res, next) => {
+  const end = httpRequestDurationMicroseconds.startTimer();
+  res.on('finish', () => {
+    end({ method: req.method, route: req.path, code: res.statusCode });
+  });
+  next();
+});
 
 const authRoutes = require('./routes/authRoutes');
 app.use('/api/auth', authRoutes);
@@ -90,6 +108,15 @@ app.use((err, req, res, next) => {
   return res.status(500).json(
     responseBody(500, 'Unexpected server error', null)
   );
+});
+
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', client.register.contentType);
+    res.end(await client.register.metrics());
+  } catch (ex) {
+    res.status(500).end(ex);
+  }
 });
 
 module.exports = app;
