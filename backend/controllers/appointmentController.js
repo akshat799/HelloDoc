@@ -89,9 +89,15 @@ const getAppointments = async (req, res) => {
 
     const query = user.role === 'patient' ? { patientId: user.userId } : { doctorId: user.userId };
 
+    const { page = 1, limit = 10 } = req.query;
+
     const appointments = await Appointment.find(query)
       .populate('patientId', 'fullName email')
-      .populate('doctorId', 'fullName email');
+      .populate('doctorId', 'fullName email')
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .lean();
+
 
     return res.status(200).json(
       responseBody(200, 'Appointments retrieved successfully', appointments)
